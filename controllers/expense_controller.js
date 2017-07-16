@@ -2,6 +2,7 @@
 var	config = require('../config'),
 	webEntry = require('../settings').webEntry,
 	Patient = require('../models/patient'), 
+	Account = require('../models/account'), 
 	Expense = require('../models/expense');
 
 exports.getDocRecords = function(req, res) {
@@ -38,7 +39,7 @@ exports.getDocRecords = function(req, res) {
 		}
 		_Url = _Url.substr(0, _Url.length - 1)
 	}
-	req.body.nexturl = webEntry.domain + ':' + webEntry.restPort + '/expense/getDocRecords' + _Url
+	req.body.nexturl = webEntry.domain + ':' + webEntry.restPort + '/api/v1/expense/getDocRecords' + _Url
 
 	Expense.getSome(query, function(err, item) {
 		if (err) {
@@ -61,6 +62,9 @@ exports.rechargeDoctor = function(req, res) {
     else{
     	var query = {
     		userId: _pid
+    	};
+    	var query1={
+    		userId:_did
     	};
     	Patient.getOne(query, function (err, patient) {
 	        if (err) {
@@ -85,7 +89,44 @@ exports.rechargeDoctor = function(req, res) {
 	                return res.status(500).send(err.errmsg);
 	            }
 	            else{
-	                res.json({result:"success!"});
+	                // res.json({result:"success!"});
+	                Account.getOne(query1, function(err, item1) {
+	                    if (err) {
+	                        return res.status(500).send(err.errmsg);
+	                    }
+	                    if (item1 == null) {
+	                        var accountData = {
+	                            userId: _did, 
+	                            money: _money,
+	                        };
+	                        var newAccount = new Account(accountData);
+	                        newAccount.save(function(err, accountInfo) {
+	                            if (err) {
+	                                return res.status(500).send(err.errmsg);
+	                            }
+	                            else{
+	                                res.json({result:"success!"});
+	                            }
+	                        });
+	                    }
+	                    else {
+	                        var _money1=_money+item1.money
+	                        var upObj = {
+	                            $set:{money:_money1}
+	                        };
+	                        Account.update(query1, upObj, function(err, upaccount) {
+	                            if (err) {
+	                                return res.status(500).send(err.errmsg);
+	                            }
+	                            if (upaccount.nModified == 0) {
+	                                return res.json({result:'请获取账户信息确认是否修改成功'});
+	                            }
+	                            else if (upaccount.nModified != 0) {
+	                                return res.json({result:'修改成功', updateResult:upaccount});
+	                            }
+	                        });
+	                    }
+	                });
 	            }
 	        });
 

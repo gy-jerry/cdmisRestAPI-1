@@ -9,6 +9,7 @@ var config = require('../config'),
     webEntry = require('../settings').webEntry,
     commonFunc = require('../middlewares/commonFunc'),
     User = require('../models/user'),
+    Doctor = require('../models/doctor'), 
     OpenIdTmp = require('../models/openId'),
     Order = require('../models/order');
 
@@ -322,6 +323,9 @@ exports.getuserinfo = function(req,res) {
         url: api_url,
         json: true
     }, function(err, response, body) {
+      if(err){
+        return res.status(500).send(err.errmsg);     
+      }
         var wechatData = {
             openid: body.openid,
             nickname: body.nickname,
@@ -348,12 +352,18 @@ exports.addOrder = function(req, res, next) {
   // console.log(orderObject);
   // console.log(req.body);
   var currentDate = new Date();
+  if(currentDate <= new Date('2017-08-01')){
+    return res.json({ results: {
+      status: 0,
+      msg: '现在为免费体验期，不收取任何费用'
+    }});
+  }
   var ymdhms = moment(currentDate).format('YYYYMMDDhhmmss');
   var out_trade_no = orderObject.orderNo; 
   var total_fee = parseInt(orderObject.money); 
   
   var detail = '<![CDATA[{"goods_detail":' + JSON.stringify(orderObject.goodsInfo) + '}]]>';
-
+    // console.log(commonFunc.getClientIp(req).split(':')[3]);
   var paramData = {
     appid: req.wxApiUserObject.appid,   // 公众账号ID
     mch_id: req.wxApiUserObject.merchantid,   // 商户号
@@ -361,16 +371,17 @@ exports.addOrder = function(req, res, next) {
     nonce_str: commonFunc.randomString(32),   // 随机字符串
     
     
-    body: 'order-' + out_trade_no,    // 商品描述
+    body: req.body.body_description,    // 商品描述
     attach: orderObject.attach,    // 附加数据   state
     
     out_trade_no: out_trade_no + '-' + commonFunc.getRandomSn(4),   // 商户订单号
     
     total_fee: total_fee,   // 标价金额
-    spbill_create_ip: req.body.ip,   // 终端IP
+    // spbill_create_ip: req.body.ip,   // 终端IP
+    spbill_create_ip: commonFunc.getClientIp(req),   // 终端IP
     time_start: ymdhms,     // 交易起始时间
     // 异步接收微信支付结果通知的回调地址，通知url必须为外网可访问的url，不能携带参数。
-    notify_url: 'http://' + webEntry.domain + ':4050/wechat/payResult',   // 通知地址
+    notify_url: 'http://' + webEntry.domain + ':4050/api/v1/wechat/payResult',   // 通知地址
     trade_type: req.body.trade_type    // 交易类型
     // openid: req.body.openid    // 用户标识
   };
@@ -406,7 +417,7 @@ exports.addOrder = function(req, res, next) {
       // 微信生成的预支付会话标识，用于后续接口调用中使用，该值有效期为2小时
       prepay_id = data.xml.prepay_id;
       req.prepay_id = prepay_id;
-      // console.log(prepay_id);
+      console.log(prepay_id);
       next();
 
       // res.redirect('/zbtong/?#/shopping/wxpay/'+ orderObject.oid +'/' + data.xml.prepay_id);
@@ -628,11 +639,11 @@ exports.refund = function(req, res) {
     mch_id: req.wxApiUserObject.merchantid,   // 商户号
     nonce_str: commonFunc.randomString(32),   // 随机字符串
     sign_type : 'MD5',
-    out_trade_no : req.query.orderNo,     // 商户订单号
-    out_refund_no : req.query.out_refund_no,
-    total_fee: total_fee,
-    refund_fee: refund_fee,
-    op_user_id: req.wxApiUserObject.merchantid // 默认为商户号
+    out_trade_no : req.orderDetail.orderNo,     // 商户订单号
+    out_refund_no : req.orderDetail.refundNo,
+    total_fee: req.orderDetail.money,
+    refund_fee: req.orderDetail.money//,
+    // op_user_id: req.wxApiUserObject.merchantid // 默认为商户号
   };
 
   var signStr = commonFunc.rawSort(paramData);
@@ -642,41 +653,71 @@ exports.refund = function(req, res) {
   var xmlBuilder = new xml2js.Builder({rootName: 'xml', headless: true});
   var xmlString = xmlBuilder.buildObject(paramData);
 
+  //读取商户证书
+  var pfxpath = req.wxApiUserObject.pfxpath;
 
-  // https请求  //  refund:'/secapi/pay/refund',
-  var options = {
-    hostname: 'api.mch.weixin.qq.com',
-    port: 443,
-    path: '/secapi/pay/refund',
+  // console.log(wxApis.refund);
+  // console.log(xmlString);
+  // console.log(pfxpath);
+  // console.log(req.wxApiUserObject.merchantid);
+  // return res.json({result: 'finish'});
+
+  request({
+    url: wxApis.refund,
     method: 'POST',
-    // key: fs.readFileSync('test/fixtures/keys/agent2-key.pem'),
-    cert: fs.readFileSync('test/fixtures/keys/agent2-cert.pem')
-  };
-
-  var req = https.request(options, (res) => {
-    // console.log('statusCode:', res.statusCode);
-    // console.log('headers:', res.headers);
-
-    res.on('data', (d) => {
-      // process.stdout.write(d);
-      res.json({results:d});
-    });
+    body: xmlString, 
+    agentOptions: {
+      pfx: fs.readFileSync(pfxpath),
+      passphrase: req.wxApiUserObject.merchantid
+    }
+  }, function(err, response, body){
+    if (err) {       
+      return res.status(500).send(err);
+    }
+    else {
+      // return res.json({results: body});
+      xml2js.parseString(body, { explicitArray : false, ignoreAttrs : true }, function (err, result) {
+        jsondata = result || {};
+      });
+      return res.json({results: jsondata});
+    }
   });
-  req.on('error', (e) => {
-    console.error(e);
-  });
-  req.end();
+
+
+  // // https请求  //  refund:'/secapi/pay/refund',
+  // var options = {
+  //   hostname: 'api.mch.weixin.qq.com',
+  //   port: 443,
+  //   path: '/secapi/pay/refund',
+  //   method: 'POST',
+  //   // key: fs.readFileSync('test/fixtures/keys/agent2-key.pem'),
+  //   cert: fs.readFileSync('test/fixtures/keys/agent2-cert.pem')
+  // };
+
+  // var req = https.request(options, (res) => {
+  //   // console.log('statusCode:', res.statusCode);
+  //   // console.log('headers:', res.headers);
+
+  //   res.on('data', (d) => {
+  //     // process.stdout.write(d);
+  //     res.json({results:d});
+  //   });
+  // });
+  // req.on('error', (e) => {
+  //   console.error(e);
+  // });
+  // req.end();
 }
 
 // 查询退款
-exports.refundquery = function(req, res) {
+exports.refundquery = function(req, res, next) {
   
   var paramData = {
     appid: req.wxApiUserObject.appid,   // 公众账号ID
     mch_id: req.wxApiUserObject.merchantid,   // 商户号
     nonce_str: commonFunc.randomString(32),   // 随机字符串
     sign_type : 'MD5',
-    out_trade_no : req.orderNo,     // 商户订单号
+    out_trade_no : req.orderDetail.orderNo     // 商户订单号
   };
 
   var signStr = commonFunc.rawSort(paramData);
@@ -691,14 +732,57 @@ exports.refundquery = function(req, res) {
     method: 'POST',
     body: xmlString
   }, function(err, response, body){
-    if (!err && response.statusCode == 200) {       
-      res.json({results:body});
+    if (err) {       
+      return res.status(500).send(err);
     }
-    else{
-      return res.status(500).send('Error');
+    else {
+      // return res.json({results: body});
+      xml2js.parseString(body, { explicitArray : false, ignoreAttrs : true }, function (err, result) {
+        jsondata = result || {};
+      });
+
+      if (jsondata.xml.return_code === 'FAIL') {
+        return res.json({results: jsondata.xml});
+      }
+      else if (jsondata.xml.return_code === 'SUCCESS' && jsondata.xml.result_code === 'SUCCESS') {
+        req.refundQueryMsg = jsondata.xml;
+        // console.log(req.refundQueryMsg);
+        next();
+      }
+      else {
+        return res.status(404).json({results: jsondata.xml});
+      }
     }
   });
 }
+
+// 测试函数用的
+// exports.testxml = function (req, res) {
+//     // var paramData = req.body.data;
+//     var paramData = '<xml><appid><![CDATA[wx2421b1c4370ec43b]]></appid><mch_id><![CDATA[10000100]]></mch_id><nonce_str><![CDATA[TeqClE3i0mvn3DrK]]></nonce_str><out_refund_no_0><![CDATA[1415701182]]></out_refund_no_0><out_trade_no><![CDATA[1415757673]]></out_trade_no><refund_count>1</refund_count></xml>'
+
+//     // var signStr = commonFunc.rawSort(paramData);
+//     // signStr = signStr + '&key=' + req.wxApiUserObject.merchantkey;
+    
+//     // paramData.sign = commonFunc.convertToMD5(signStr, true);    // 签名
+//     // var xmlBuilder = new xml2js.Builder({rootName: 'xml', headless: true});
+//     // var xmlString = xmlBuilder.buildObject(paramData);
+//     // console.log(xmlString)
+//     // return res.json({result: xmlString});
+//     // var parser = new xml2js.Parser();
+//     // var jsondata = {};
+   
+//     // parser.parseString(xmlString, function(err, result) {        
+//     //   jsondata = result || {};
+//     // });
+
+//     xml2js.parseString(paramData, { explicitArray : false, ignoreAttrs : true }, function (err, result) {
+//       jsondata = result || {};
+//     })
+//     // console.log(jsondata);
+//     // return res.json({result: jsondata});
+//     return res.status(400).json({result: jsondata});
+// }
 
 // 消息模板
 exports.messageTemplate = function(req, res) {
@@ -720,6 +804,7 @@ exports.messageTemplate = function(req, res) {
           if(item.MessageOpenId === null){
             return res.status(400).send('openId do not exist');
           }
+          var messageOpenId;
           if(role == 'doctor'){
             messageOpenId = item.MessageOpenId.doctorWechat;
           }
@@ -848,7 +933,7 @@ exports.receiveTextMessage = function(req, res) {
     // console.log("partial: " + body);
   });
   req.on('end',function(){
-    // console.log("finish: " + body);
+    console.log("finish: " + body);
     var parser = new xml2js.Parser();
     var jsondata = {};
    
@@ -868,21 +953,27 @@ exports.receiveTextMessage = function(req, res) {
           var doctor_userId;
           // 
           console.log(jsondata);
+          var patientType;
           if(jsondata.xml.Event == 'subscribe'){
             doctor_userId =  jsondata.xml.EventKey[0].split('_')[1];
+            // 未注册
+            patientType = 0;
           }
           if(jsondata.xml.Event == 'SCAN'){
             doctor_userId =  jsondata.xml.EventKey;
+            // 已注册
+            patientType = 1;
           }
         console.log(doctor_userId);
           // 暂存医生和患者的openId
           var patient_openId = jsondata.xml.FromUserName;       
-          var time = Date();
+          var time = new Date();
 
           var openIdData = {
             doctorUserId: doctor_userId,
             patientOpenId: patient_openId,
-            time: time
+            time: time,
+            patientType: patientType
           };
           // console.log(openIdData);
           var newOpenIdTmp = new OpenIdTmp(openIdData);
@@ -905,7 +996,7 @@ exports.receiveTextMessage = function(req, res) {
                 var workUnit = doctor.workUnit;
 
                 var template = {
-                  "userId": '',          // data.msg.content.doctorId, //医生的UID
+                  "userId": patient_openId,         
                   "role": "patient",
                   "postdata": {
                     "touser": patient_openId,
@@ -938,7 +1029,7 @@ exports.receiveTextMessage = function(req, res) {
                 };
 
                 request({
-                  url: 'http://' + webEntry.domain + ':4050/wechat/messageTemplate' + '?token=' + req.query.token || req.body.token,
+                  url: 'http://' + webEntry.domain + ':4050/api/v1/wechat/messageTemplate' + '?token=' + req.query.token || req.body.token,
                   method: 'POST',
                   body:template,
                   json:true
@@ -947,7 +1038,13 @@ exports.receiveTextMessage = function(req, res) {
                     results = err;
                   }
                   else{
-                    results = 'success';
+                    if( jsondata.xml.Event == 'SCAN'){
+                      results = 'success';
+                    }
+                    else{
+                      results = "您好，欢迎关注肾事管家~让每一位慢性肾病患者得到有效管理。找名医进行咨询问诊，请点击底栏【肾事管家】~定制私人肾病全程管理方案，请点击底栏【全程管理】~";
+                    }
+
                   }
 
                 });
