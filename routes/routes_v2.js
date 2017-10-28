@@ -5744,8 +5744,9 @@ module.exports = function (app, webEntry, acl) {
    */
   app.post(version + '/services/manualRefund', tokenManager.verifyToken(), errorHandler.error, aclChecking.Checking(acl, 2), personalDiagCtrl.manualRefundAndNotice)
   // 服务相关短信测试 - 非前端调用
-  app.post(version + '/services/message', tokenManager.verifyToken(), errorHandler.error, aclChecking.Checking(acl, 2), alluserCtrl.serviceMessage)
-  // app.post(version + '/services/message', tokenManager.verifyToken(), errorHandler.error, aclChecking.Checking(acl, 2), alluserCtrl.servicesMessageAsyncTest)
+  // app.post(version + '/services/message', tokenManager.verifyToken(), errorHandler.error, aclChecking.Checking(acl, 2), alluserCtrl.serviceMessage)
+  // app.post(version + '/services/message', alluserCtrl.servicesMessageAsyncTest)
+  // app.post(version + '/services/messageLSM', alluserCtrl.serviceMessageLSM)
 
   // PC端保险管理
   // 获取患者 权限insuranceC/insuranceA/admin
@@ -6733,6 +6734,45 @@ module.exports = function (app, webEntry, acl) {
    */
   // 删除患者某条健康信息 权限 医生/患者
   app.post(version + '/healthInfo/deleteHealthDetail', tokenManager.verifyToken(), errorHandler.error, aclChecking.Checking(acl, 2), healthInfoCtrl.deleteHealthDetail)
+  /**
+   * @swagger
+   * /healthInfo/allHealthInfos:
+   *   get:
+   *     operationId: getAllHealthInfos
+   *     tags:
+   *       - HealthInfo
+   *     summary: 获取所有患者的全部健康信息
+   *     description: Get All HealthInfos
+   *     produces:
+   *       - application/json
+   *     parameters:
+   *       - name: token
+   *         description: 授权信息
+   *         in: query
+   *         required: true
+   *         type: string
+   *       - name: limit
+   *         in: query
+   *         required: false
+   *         description: 分页参数
+   *         type: number
+   *       - name: skip
+   *         in: query
+   *         required: false
+   *         description: 分页参数
+   *         type: number
+   *     responses:
+   *       200:
+   *         description: 获取成功
+   *         schema:
+   *           type: array
+   *           items:
+   *             $ref: '#/definitions/HealthInfo'
+   *       500:
+   *         description: 服务器错误
+   */
+  // 获取所有患者的全部健康信息 权限 admin
+  app.get(version + '/healthInfo/allHealthInfos', tokenManager.verifyToken(), errorHandler.error, aclChecking.Checking(acl, 2), healthInfoCtrl.getAllHealthInfos)
 
   // insurance
   /**
@@ -8841,6 +8881,7 @@ module.exports = function (app, webEntry, acl) {
    *         description: 返回成功消息
    */
   app.post(version + '/department/delete', tokenManager.verifyToken(), errorHandler.error, aclChecking.Checking(acl, 1), departmentCtrl.deleteRecord)
+  app.get(version + '/department/getinfo', tokenManager.verifyToken(), errorHandler.error, aclChecking.Checking(acl, 2), departmentCtrl.getInfobyId)
 
   // 医生数据监控
   /** JYF 2017-08-16
