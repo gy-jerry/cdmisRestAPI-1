@@ -452,6 +452,91 @@ exports.counselAutoRelay = function (req, res, next) {
                 newsErrFlag = 1
                 console.log(new Date(), 'newsErr', err)
               }
+              request({
+                      // url: 'http://' + webEntry.domain + ':4060/api/v1/communication/getTeam?teamId=' + data.msg.teamId + '?token=' + req.query.token || req.body.token,
+                url: 'http://' + webEntry.domain + '/api/v2/communication/teamtemp?teamId=' + teamitem.teamId,
+                method: 'GET',
+                json: true
+              }, function (err, response) {
+                if (err) {
+                          // do-something
+                          // console.log(err.errmsg);
+                } else {
+                  // console.log(response.body)
+                  if (!response.body.results) {
+                    // console.log('noperson')
+                  } else {
+                    var sponsorId = response.body.results.sponsorId
+                    var members = response.body.results.members
+                    members.push({'userId': sponsorId})
+                    for (var idx in members) {
+                      var actionUrl = 'https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxfa2216ac422fb747&redirect_uri=https://media.haihonghospitalmanagement.com/proxy&response_type=code&scope=snsapi_userinfo&state=doctor_13_1_' + msgContent.consultationId + '_' + teamitem.teamId + '&#wechat_redirect'
+                      var help
+                      var time
+                      if (msgContent !== null) {
+                        var counsel = msgContent.counsel || null
+                        if (counsel !== null) {
+                          help = counsel.help
+                          time = counsel.time || new Date()
+                        }
+                      }
+                      let y = time.getFullYear()
+                      let m = time.getMonth() + 1
+                      let d = time.getDate()
+                      let h = time.getHours()
+                      let mm = time.getMinutes()
+                      let s = time.getSeconds()
+                      let formatSecond = y + '-' + add0(m) + '-' + add0(d) + ' ' + add0(h) + ':' + add0(mm) + ':' + add0(s)
+                      var template = {
+                        'userId': members[idx].userId,          // data.msg.content.doctorId, //医生的UID
+                        'role': 'doctor',
+                        'postdata': {
+                          'template_id': config.wxTemplateIdConfig.newCounselToDocOrTeam, // 'cVLIgOb_JvtFGQUA2KvwAmbT5B3ZB79cRsAM4ZKKK0k',
+                          'url': actionUrl,
+                          'data': {
+                            'first': {
+                              'value': '您的团队有一个新的咨询（问诊）消息，请及时处理',
+                              'color': '#173177'
+                            },
+                            'keyword1': {
+                              'value': msgContent.counselId, // 咨询ID
+                              'color': '#173177'
+                            },
+                            'keyword2': {
+                              'value': msgContent.patientName, // 患者信息（姓名，性别，年龄）
+                              'color': '#173177'
+                            },
+                            'keyword3': {
+                              'value': help, // 问题描述
+                              'color': '#173177'
+                            },
+                            'keyword4': {
+                              'value': formatSecond, // 提交时间
+                              'color': '#173177'
+                            },
+
+                            'remark': {
+                              'value': '感谢您的使用！',
+                              'color': '#173177'
+                            }
+                          }
+                        }
+                      }
+                      // console.log(template)
+                      request({
+                                          // url: 'http://'+ webEntry.domain +':4060/api/v1/wechat/messageTemplate' + '?token=' + req.query.token || req.body.token,
+                        url: 'http://' + webEntry.domain + '/api/v2/wechat/messageTemplate',
+                        method: 'POST',
+                        body: template,
+                        json: true
+
+                      }, function (err, response, body) {
+                        // console.log(response)
+                      })
+                    }
+                  }
+                }
+              })
               if (index < teamIds.length - 1) {
                 relayOne(++index)
               } else {
@@ -732,6 +817,9 @@ exports.counselAutoEndMsg = function () {
   let endTime = new Date(currentTime.getFullYear(), currentTime.getMonth(), currentTime.getDate(), '08', '00', '00')
   // console.log('startTime', startTime)
   // console.log('endTime', endTime)
+  function add0 (m) {
+    return m < 10 ? '0' + m : m
+  }
   let query = {
     'endTime': {$gte: startTime, $lt: endTime} // >= <
   }
@@ -747,7 +835,7 @@ exports.counselAutoEndMsg = function () {
     } else {
       // console.log(timeoutCounsels[0])
       // console.log(timeoutCounsels.length)
-      for (let i = 0; i < 1; i++) {
+      for (let i = 0; i < timeoutCounsels.length; i++) {
         // let doctorOpenId = timeoutCounsels[i].doctorId.openId
         // let patientOpenId = timeoutCounsels[i].patientId.openId
         let valueTmp1 = '您好，患者咨询已结束。'
@@ -758,12 +846,20 @@ exports.counselAutoEndMsg = function () {
         if (timeoutCounsels[i].type === 6 || timeoutCounsels[i].type === 7) {
           endReason = '2小时未处理'
         }
+        let time = timeoutCounsels[i].time
+        let y = time.getFullYear()
+        let m = time.getMonth() + 1
+        let d = time.getDate()
+        let h = time.getHours()
+        let mm = time.getMinutes()
+        let s = time.getSeconds()
+        let formatSecond = y + '-' + add0(m) + '-' + add0(d) + ' ' + add0(h) + ':' + add0(mm) + ':' + add0(s)
         var templateDoc = {
           'userId': timeoutCounsels[i].doctorId.userId,
           'role': 'doctor',
           'postdata': {
             'template_id': config.wxTemplateIdConfig.counselAutoEndDoc,
-            'url': '',                                      // 跳转路径需要添加
+            // 'url': '',                                      // 跳转路径需要添加
             'data': {
               'first': {
                 'value': valueTmp1,
@@ -782,7 +878,7 @@ exports.counselAutoEndMsg = function () {
                 'color': '#173177'
               },
               'keyword4': {
-                'value': commonFunc.getNowFormatSecond(),   // 提交时间
+                'value': formatSecond,                      // 提交时间
                 'color': '#173177'
               },
 
@@ -827,7 +923,7 @@ exports.counselAutoEndMsg = function () {
           'role': 'patient',
           'postdata': {
             'template_id': config.wxTemplateIdConfig.counselAutoEndPat,
-            'url': '',
+            // 'url': '',
             'data': {
               'first': {
                 'value': valueTmp2,

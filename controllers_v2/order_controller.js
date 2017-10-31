@@ -231,8 +231,9 @@ exports.insertOrder = function (req, res, next) {
           paystatus = 0
         }
         var currentDate = new Date()
-        if (currentDate <= new Date('2017-09-01')) {
+        if (currentDate <= new Date('2018-01-01')) {
           paystatus = 2
+          freeFlag = 1
           // return res.json({ results: {
           //   status: 0,
           //   msg: '现在为免费体验期，不收取任何费用'
@@ -270,11 +271,11 @@ exports.insertOrder = function (req, res, next) {
             return res.json({results: {status: 1, msg: '该医生为您的主管医生，无需支付'}})
           } else if (trueMoney === 0) {
             return res.json({results: {status: 1, msg: '支付金额为0，无需进行支付'}})
+          } else if (currentDate <= new Date('2018-01-01')) {
+            return res.json({results: {status: 1, msg: '现在为免费体验期，不收取任何费用'}})
           } else if (freeFlag === 1) {
             // 有免费次数
             return res.json({results: {status: 1, msg: '本次服务免费'}})
-          } else if (currentDate <= new Date('2017-09-01')) {
-            return res.json({results: {status: 1, msg: '现在为免费体验期，不收取任何费用'}})
           } else {
             req.orderObject = item
             next()
@@ -406,9 +407,11 @@ exports.refundChangeStatus = function (status) {
     var upObj
     if (_status === 'refundApplication') {
       upObj = {
-        paystatus: 6, // 退款处理中
-        refundNo: req.newId,
-        refundAppTime: new Date()
+        $set: {
+          paystatus: 6, // 退款处理中
+          refundNo: req.newId,
+          refundAppTime: new Date()
+        }
       }
     } else if (_status === 'REFUNDCLOSE') {
       upObj = {

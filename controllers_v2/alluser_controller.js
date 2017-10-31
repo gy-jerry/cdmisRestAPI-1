@@ -19,6 +19,7 @@ var commonFunc = require('../middlewares/commonFunc')
 var Errorlog = require('../models/errorlog')
 
 var alluserCtrl = require('../controllers_v2/alluser_controller')
+var wechatCtrl = require('../controllers_v2/wechat_controller')
 
 // var Base64 = {
 //     // 转码表
@@ -903,6 +904,11 @@ exports.openIdLoginTest = function (req, res, next) {
     next()
   })
 }
+
+function add0 (m) {
+  return m < 10 ? '0' + m : m
+}
+
 exports.checkBinding = function (req, res) {
   // 2017-06-07GY调试
   // console.log('checkBinding_in');
@@ -992,7 +998,7 @@ exports.checkBinding = function (req, res) {
                   return res.status(500).send(err.errmsg)
                 }
                 // 微信模板消息 2017-10-12 lgf
-                if (role === 'doctor') {
+                if (role === 'patient') {
                   let queryD = {userId: item1.doctorUserId, role: 'doctor'}
                   Alluser.getOne(queryD, function (err, doctor) {
                     if (err) {
@@ -1036,6 +1042,8 @@ exports.checkBinding = function (req, res) {
                           }
                         }
                       }
+                      // console.log(templatePat)
+                      // console.log('http://' + webEntry.domain + '/api/v2/wechat/messageTemplate')
                       request({
                         url: 'http://' + webEntry.domain + '/api/v2/wechat/messageTemplate',
                         method: 'POST',
@@ -1045,6 +1053,14 @@ exports.checkBinding = function (req, res) {
                         if (err) {
                           return res.status(500).send(err.errmsg)
                         } else {
+                          let date = new Date()
+                          let y = date.getFullYear()
+                          let m = date.getMonth() + 1
+                          let d = date.getDate()
+                          let h = date.getHours()
+                          let mm = date.getMinutes()
+                          let s = date.getSeconds()
+                          let formatSecond = y + '-' + add0(m) + '-' + add0(d) + ' ' + add0(h) + ':' + add0(mm) + ':' + add0(s)
                           let templateDoc = {
                             'userId': doctor.userId,
                             'role': 'doctor',
@@ -1061,11 +1077,11 @@ exports.checkBinding = function (req, res) {
                                   'color': '#173177'
                                 },
                                 'keyword2': {
-                                  'value': commonFunc.getNowFormatSecondMinus(), // 添加的时间
+                                  'value': formatSecond,     // 添加的时间
                                   'color': '#173177'
                                 },
                                 'remark': {
-                                  'value': '点击查看',
+                                  'value': '点击底栏【工作站】按钮，登录后可查看患者详情',
                                   'color': '#173177'
                                 }
                               }
@@ -1087,11 +1103,12 @@ exports.checkBinding = function (req, res) {
                       })
                     }
                   })
-                }
-                // 2017-06-07GY调试
-                // console.log('checkBinding_out');
+                } else {
+                  // 2017-06-07GY调试
+                  // console.log('checkBinding_out');
 
-                return res.json({results: req.results})
+                  return res.json({results: req.results})
+                }
               })
             })
           } else {
@@ -2291,6 +2308,48 @@ exports.serviceMessage = function (req, res, next) {
 
   requestTest.write(content)
   requestTest.end()
+
+  let template = {
+    'userId': req.session.userId,
+    'role': 'patient',
+    'postdata': {
+      'template_id': config.wxTemplateIdConfig.myPDSuccess,
+      'url': '',
+      'data': {
+        'first': {
+          'value': '您好，您的面诊预约已成功！',
+          'color': '#173177'
+        },
+        'keyword1': {
+          'value': doctorName,
+          'color': '#173177'
+        },
+        'keyword2': {
+          'value': PDTime,
+          'color': '#173177'
+        },
+        'keyword3': {
+          'value': PDPlace,
+          'color': '#173177'
+        },
+        'remark': {
+          'value': '届时请出示验证码' + confirmCode + '。您可登录应用进行查看相关详细信息。',
+          'color': '#173177'
+        }
+      }
+    }
+  }
+  wechatCtrl.wechatMessageTemplate(template, function (err, results) {
+    if (err) {
+      console.log(new Date(), 'send_messageTemplate_toPIC_err_' + req.session.name)
+    } else {
+      if (results.messageTemplate.errcode === 0) {
+        console.log(new Date(), 'send_messageTemplate_toPIC_success_' + req.session.name)
+      } else {
+        console.log(new Date(), 'send_messageTemplate_toPIC_fail_' + req.session.name + results.messageTemplate.errcode)
+      }
+    }
+  })
   next()
 }
 
